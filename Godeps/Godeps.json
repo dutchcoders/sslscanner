@@ -1,0 +1,22 @@
+{
+	"ImportPath": "_/Users/remco/Projects/sslscanner",
+	"GoVersion": "go1.4.2",
+	"Packages": [
+		"github.com/dutchcoders/sslscanner"
+	],
+	"Deps": [
+		{
+			"ImportPath": "github.com/alecthomas/units",
+			"Rev": "6b4e7dc5e3143b85ea77909c72caf89416fc2915"
+		},
+		{
+			"ImportPath": "github.com/davecgh/go-spew/spew",
+			"Rev": "fc32781af5e85e548d3f1abaf0fa3dbe8a72495c"
+		},
+		{
+			"ImportPath": "gopkg.in/alecthomas/kingpin.v1",
+			"Comment": "v1.3.6",
+			"Rev": "55a69a226d28a43b913720f5d765706d49c8fa9e"
+		}
+	]
+}

@@ -3,20 +3,36 @@ package main
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net"
-	"net/http"
-	"net/url"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	_ "github.com/davecgh/go-spew/spew"
 	"gopkg.in/alecthomas/kingpin.v1"
+
+	"github.com/dutchcoders/sslscanner/checks"
+	"github.com/dutchcoders/sslscanner/scanners"
+
+	// plugins "sslscanner/plugins"
 )
+
+// http://miek.nl/posts/2014/Aug/16/go-dns-package/
+
+// connect to port
+// retrieve all certificates
+// check the certificates
+// show warning or error to certificate
+
+// rename Scanner to Plugin?
+// embed defaultscanner in plugin itself?
 
 // scan multiple ports for ip
 // different scanners
@@ -25,110 +41,19 @@ import (
 // detect warnings, eg ssl sha1 usage, rc4 usage, name usage
 // threat warnings as errors
 
-type Scanner interface {
-	Scan(ip net.IP, port int) (net.Conn, error)
-}
+// multiple protocols
+// flexible ssl checks
+// flexibele plugins
+// warnings en errors terug
+// retrieve info about the certificates
+// test the info about the certficates
+// comparable with go test
 
-type DefaultScanner struct {
-	Scanner
-}
-
-func (s *DefaultScanner) Scan(ip net.IP, port int) (net.Conn, error) {
+func Connect(ip net.IP, port int) (net.Conn, error) {
 	dialer := new(net.Dialer)
-	dialer.Timeout = time.Duration(1) * time.Second
+	dialer.Timeout = time.Duration(60) * time.Second
 	conn, err := dialer.Dial("tcp", net.JoinHostPort(ip.String(), strconv.Itoa(port)))
 	return conn, err
-}
-
-func NewDefaultScanner() Scanner {
-	return &DefaultScanner{}
-}
-
-type TLSExtract struct {
-}
-
-type timeoutError struct{}
-
-func (timeoutError) Error() string   { return "tls: DialWithDialer timed out" }
-func (timeoutError) Timeout() bool   { return true }
-func (timeoutError) Temporary() bool { return true }
-
-func (s *TLSExtract) Extract(conn net.Conn) error {
-	tlsconn := tls.Client(conn, &tls.Config{InsecureSkipVerify: true})
-
-	errChannel := make(chan error, 2)
-
-	timeout := time.Duration(1) * time.Second
-	time.AfterFunc(timeout, func() {
-		errChannel <- timeoutError{}
-	})
-
-	go func() {
-		errChannel <- tlsconn.Handshake()
-	}()
-
-	err := <-errChannel
-
-	if err != nil {
-		return err
-	}
-
-	for _, c := range tlsconn.ConnectionState().PeerCertificates {
-		fmt.Printf("Subject: %s (%s)\nIssuer: %s (%s)\nVersion: %d\nNotBefore: %s\nNotAfter:%s",
-			strings.Join(c.Subject.Organization, ", "),
-			c.Subject.CommonName,
-			strings.Join(c.Issuer.Organization, ", "),
-			c.Issuer.CommonName,
-			c.Version,
-			c.NotBefore,
-			c.NotAfter)
-
-		fmt.Println(strings.Join(c.PermittedDNSDomains, ", "))
-		fmt.Println(strings.Join(c.DNSNames, ", "))
-		fmt.Printf("Keyusage %d\n", c.KeyUsage)
-		fmt.Printf("Publickey Algorithm %d\n", c.PublicKeyAlgorithm)
-		switch c.PublicKeyAlgorithm {
-		case x509.UnknownPublicKeyAlgorithm:
-			fmt.Println("UnknownPublicKeyAlgorithm")
-		case x509.RSA:
-			fmt.Println("RSA")
-		case x509.DSA:
-			fmt.Println("DSA")
-		case x509.ECDSA:
-			fmt.Println("ECDSA")
-		}
-		fmt.Printf("Signature Algorithm %d\n", c.SignatureAlgorithm)
-		switch c.SignatureAlgorithm {
-		case x509.UnknownSignatureAlgorithm:
-			fmt.Println("UnknownSignatureAlgorithm")
-		case x509.MD2WithRSA:
-			fmt.Println("MD2WithRSA")
-		case x509.MD5WithRSA:
-			fmt.Println("MD5WithRSA")
-		case x509.SHA1WithRSA:
-			fmt.Println("SHA1WithRSA")
-		case x509.SHA256WithRSA:
-			fmt.Println("SHA256WithRSA")
-		case x509.SHA384WithRSA:
-			fmt.Println("SHA384WithRSA")
-		case x509.SHA512WithRSA:
-			fmt.Println("SHA512WithRSA")
-		case x509.DSAWithSHA1:
-			fmt.Println("DSAWithSHA1")
-		case x509.DSAWithSHA256:
-			fmt.Println("DSAWithSHA256")
-		case x509.ECDSAWithSHA1:
-			fmt.Println("ECDSAWithSHA1")
-		case x509.ECDSAWithSHA256:
-			fmt.Println("ECDSAWithSHA256")
-		case x509.ECDSAWithSHA384:
-			fmt.Println("ECDSAWithSHA384")
-		case x509.ECDSAWithSHA512:
-			fmt.Println("ECDSAWithSHA512")
-		}
-
-	}
-	return nil
 }
 
 func inc(ip net.IP) {
@@ -140,29 +65,34 @@ func inc(ip net.IP) {
 	}
 }
 
+type IPAndHostname struct {
+	IP       net.IP
+	Hostname string
+}
+
 // will parse arguments and return channel with ips
-func parseArgs(args []string) chan net.IP {
-	out := make(chan net.IP)
+func parseArgs(args []string) chan IPAndHostname {
+	out := make(chan IPAndHostname)
 
 	go func() {
 		for _, arg := range args {
 			// resolve cidr
 			if ip, ipnet, err := net.ParseCIDR(arg); err == nil {
 				for ip := ip.Mask(ipnet.Mask); ipnet.Contains(ip); inc(ip) {
-					out <- ip
+					out <- IPAndHostname{IP: ip, Hostname: ""}
 				}
 			}
 
 			// single ip
 			ip := net.ParseIP(arg)
 			if ip != nil {
-				out <- ip
+				out <- IPAndHostname{IP: ip, Hostname: ""}
 			}
 
 			// resolve hostname
 			if ips, err := net.LookupIP(arg); err == nil {
 				for _, ip := range ips {
-					out <- ip
+					out <- IPAndHostname{IP: ip, Hostname: arg}
 				}
 			}
 
@@ -187,59 +117,58 @@ const (
 	PortStatusOpen PortStatus = iota
 )
 
-type ScanFunc func(net.Conn) error
-
-func Scan(fn ScanFunc) func(net.Conn) error {
-	return func(conn net.Conn) error {
-		return fn(conn)
-	}
-}
-
-func HTTPBanner(conn net.Conn) error {
-	client := http.Client{
-		Transport: &http.Transport{
-			Dial: func(netw, addr string) (c net.Conn, err error) {
-				return conn, nil
-			},
-		},
-	}
-
-	req := &http.Request{
-		Method:     "HEAD",
-		URL:        &url.URL{Scheme: "http", Host: "sc.ann.er", Path: "/"},
-		Proto:      "HTTP/1.1",
-		ProtoMajor: 1,
-		ProtoMinor: 1,
-		Header:     make(http.Header),
-		Body:       nil,
-		Host:       "",
-	}
-
-	if resp, err := client.Do(req); err == nil {
-		logger.Printf("Server banner '%s';", resp.Header.Get("Server"))
-	} else {
-		return err
-	}
-
-	return nil
-}
-
 var ErrNotImplemented = errors.New("Not implemented")
 
 func SSHScan(conn net.Conn) error {
 	return ErrNotImplemented
 }
 
-func TLSScan(conn net.Conn) error {
-	// will extract the tls
-	extract := TLSExtract{}
-	if err := extract.Extract(conn); err != nil {
-		logger.Printf("%s\n", err)
-		return err
+func LoadClientCertificate(certFile, keyFile string) (tls.Certificate, error) {
+	return tls.LoadX509KeyPair(certFile, keyFile)
+}
+
+func LoadRootCertificates(r io.Reader) (*x509.CertPool, error) {
+	fs := x509.NewCertPool()
+
+	pemCerts, err := ioutil.ReadAll(r)
+	if err != nil {
+		return fs, err
 	}
 
-	return nil
+	for len(pemCerts) > 0 {
+		var block *pem.Block
+		block, pemCerts = pem.Decode(pemCerts)
+		if block == nil {
+			break
+		}
+		if block.Type != "CERTIFICATE" || len(block.Headers) != 0 {
+			continue
+		}
+
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			return fs, err
+		}
+
+		fs.AddCert(cert)
+
+		logger.Printf("Loaded root certificate %s.", cert.Subject.CommonName)
+	}
+
+	return fs, nil
 }
+
+/*
+type SSLScanner struct {
+}
+
+type SSLScannerConfig struct {
+}
+
+func NewSSLScanner(conf SSLScannerConfig) *SSLScanner {
+	scanner := &SSLScanner{}
+	return scanner
+}*/
 
 func main() {
 	var (
@@ -247,56 +176,120 @@ func main() {
 		ranges = kingpin.Arg("ips", "range, ip address or hostname").Required().Strings()
 		ports  = kingpin.Flag("ports", "ports to scan").Short('p').Required().String()
 		format = kingpin.Flag("format", "output format to use").Short('f').Default("text").Enum("xml", "json", "text")
+		root   = kingpin.Flag("root", "").File()
+		client = kingpin.Flag("client", "").File()
 	)
 
 	kingpin.Parse()
 
-	fmt.Println(*format)
+	_ = format
 
 	if *debug {
 		logger = log.New(os.Stderr, "", log.Ldate|log.Ltime)
 	}
 
-	scanners := []ScanFunc{
-		Scan(TLSScan),
-		Scan(HTTPBanner),
+	scanners := []scanners.ScanFunc{
+		scanners.Scan(scanners.HTTPSScanner),
+		// Scan(HTTPScanner),
+		// scanners.Scan(scanners.FTPScanner)
+		// scanners.Scan(scanners.POP3Scanner)
+		// scanners.Scan(scanners.IMAPScanner)
+		scanners.Scan(scanners.SMTPScanner),
 	}
 
-	for ip := range parseArgs(*ranges) {
-		// reverse lookup
+	for hostnameAndIp := range parseArgs(*ranges) {
+		hostname := hostnameAndIp.Hostname
+		ip := hostnameAndIp.IP
+
 		report := NewReport(ip)
 
+		// reverse lookup
 		var err error
-		if report.Hostnames, err = net.LookupAddr(ip.String()); err != nil {
+		if report.Hostnames, err = net.LookupAddr(ip.String()); err == nil {
+			logger.Printf("Reverse hostnames %s.\n", strings.Join(report.Hostnames, ", "))
+		} else if err != nil {
 			logger.Printf("Error during reverse lookup: %s\n", err)
 		}
 
-		// parallel
-		for _, port := range strings.Split(*ports, ",") {
-			port = strings.Trim(port, " ")
-			port, _ := strconv.Atoi(port)
+		// check ports
+		for _, port_str := range strings.Split(*ports, ",") {
+			port_str = strings.Trim(port_str, " ")
+			port, err := strconv.Atoi(port_str)
+			if err != nil {
+				fmt.Printf("Invalid port number %s\n.", port_str)
+				continue
+			}
 
-			logger.Printf("Scanning %s (%d): ", ip, port)
+			// specific checks for hostname and ip
+			checkFuncs := []checks.CheckFunc{
+				checks.CheckSuiteSupported(tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256),
+				checks.CheckSuiteSupported(tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256),
+				checks.CheckSuiteSupported(tls.TLS_ECDHE_RSA_WITH_RC4_128_SHA),
+				checks.CheckSuiteSupported(tls.TLS_ECDHE_ECDSA_WITH_RC4_128_SHA),
+				checks.CheckSuiteSupported(tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA),
+				checks.CheckSuiteSupported(tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA),
+				checks.CheckSuiteSupported(tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA),
+				checks.CheckSuiteSupported(tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA),
+				checks.CheckSuiteSupported(tls.TLS_RSA_WITH_RC4_128_SHA),
+				checks.CheckSuiteSupported(tls.TLS_RSA_WITH_AES_128_CBC_SHA),
+				checks.CheckSuiteSupported(tls.TLS_RSA_WITH_AES_256_CBC_SHA),
+				checks.CheckSuiteSupported(tls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA),
+				checks.CheckSuiteSupported(tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA),
+				checks.DumpCertificates(),
+				checks.Verify(
+					checks.VerifyValidBefore(),
+					checks.VerifyValidAfter(),
+					checks.VerifyAuthority(),
+					checks.VerifyHostname(hostname),
+				),
+				// CheckHeartBlead(),
+				// CheckPoodle() <
+				// CheckDomainName(),
+				// CheckClientCertificate(),
+				// CheckServerName(),
+			}
+
+			if *root != nil {
+				logger.Printf("Loading root certificates %s.", (*root).Name())
+				if certPool, err := LoadRootCertificates(*root); err == nil {
+					checkFuncs = append(checkFuncs, checks.CheckRoot(certPool))
+				} else if err != nil {
+					logger.Printf("Error during loading root certificates: %s", err.Error())
+					os.Exit(1)
+				}
+			}
+
+			if *client != nil {
+				logger.Printf("Loading client certificate %s.", (*client).Name())
+				if certificates, err := LoadClientCertificate("test.pem", "test.cert"); err == nil {
+					checkFuncs = append(checkFuncs, checks.CheckClient(certificates))
+				} else if err != nil {
+					logger.Printf("Error during loading client certificates: %s.", err.Error())
+					os.Exit(1)
+				}
+			}
+
+			logger.Printf("Scanning %s (%d) (%s): ", ip, port, hostname)
 
 			for _, scanner := range scanners {
-				var conn net.Conn
-				var err error
-				if conn, err = NewDefaultScanner().Scan(ip, port); err != nil {
-					logger.Printf("%s\n", err)
-					break
+				for _, checkFn := range checkFuncs {
+					var conn net.Conn
+					var err error
+					if conn, err = Connect(ip, port); err != nil {
+						logger.Printf("%s\n", err)
+						break
+					}
+
+					defer conn.Close()
+
+					err = scanner(conn, func() (net.Conn, error) {
+						return conn, checkFn(conn)
+					})
+
+					if err != nil {
+						logger.Printf("%s\n", err)
+					}
 				}
-
-				defer conn.Close()
-
-				// port is open
-				report.Ports[port] = PortStatusOpen
-
-				// will extract the tls
-				if err = scanner(conn); err != nil {
-					logger.Printf("%s\n", err)
-				}
-
-				// extract.Check() for red flags
 			}
 		}
 	}
