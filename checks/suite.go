@@ -3,17 +3,35 @@ package checks
 import (
 	"crypto/tls"
 	"net"
+
+	"github.com/dutchcoders/sslscanner/logger"
 )
+
+func CheckDeprecatedSuiteSupported(suite uint16) CheckFunc {
+	return func(conn net.Conn) error {
+		config := tls.Config{CipherSuites: []uint16{suite}, InsecureSkipVerify: true}
+
+		if _, err := TLSConnect(conn, config); err != nil {
+			logger.Printf("Cipher suite %s:  %s\n", CipherSuite(suite).String(), err.Error())
+			return nil
+		}
+
+		logger.Printf("Deprecated cipher suite %s supported.\n", CipherSuite(suite).String())
+		return nil
+
+	}
+}
 
 func CheckSuiteSupported(suite uint16) CheckFunc {
 	return func(conn net.Conn) error {
 		config := tls.Config{CipherSuites: []uint16{suite}, InsecureSkipVerify: true}
 
 		if _, err := TLSConnect(conn, config); err != nil {
-			logger.Printf("Cipher suite %s not supported\n", CipherSuite(suite).String())
+			logger.Printf("Cipher suite %s:  %s\n", CipherSuite(suite).String(), err.Error())
 			return nil
 		}
-		logger.Printf("Cipher suite %s supported\n", CipherSuite(suite).String())
+
+		logger.Printf("Cipher suite %s supported: ok\n", CipherSuite(suite).String())
 		return nil
 	}
 }

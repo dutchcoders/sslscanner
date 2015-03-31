@@ -1,5 +1,12 @@
 # SSLScanner
 
+SSLScanner is a command line tool that will scan your network for ssl / tls implementations. Currently the following protocols are being supported:
+
+* SMTP
+* HTTPS
+* POP3
+* IMAP
+
 # Demo
 
 # Usage

@@ -3,6 +3,8 @@ package checks
 import (
 	"crypto/tls"
 	"net"
+
+	"github.com/dutchcoders/sslscanner/logger"
 )
 
 func CheckClient(certificate tls.Certificate) CheckFunc {

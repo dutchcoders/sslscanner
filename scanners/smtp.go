@@ -20,8 +20,8 @@ func NewSMTPClient(conn net.Conn) *SMTPClient {
 	return &SMTPClient{Text: tconn}
 }
 
-func (c *SMTPClient) Ehlo() error {
-	_, msg, err := c.cmd(250, "EHLO %s", "mail.solcon.nl")
+func (c *SMTPClient) Ehlo(host string) error {
+	_, msg, err := c.cmd(250, "EHLO %s", host)
 	fmt.Println("EHLO", msg, err)
 
 	ext := make(map[string]string)
@@ -66,7 +66,7 @@ func (c *SMTPClient) cmd(expectCode int, format string, args ...interface{}) (in
 func SMTPScanner(conn net.Conn, fn InnerFunc) error {
 	client := NewSMTPClient(conn)
 
-	if err := client.Ehlo(); err != nil {
+	if err := client.Ehlo("sslscanner.com"); err != nil {
 		return err
 	}
 

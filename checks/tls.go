@@ -13,7 +13,6 @@ func (timeoutError) Timeout() bool   { return true }
 func (timeoutError) Temporary() bool { return true }
 
 func TLSConnect(conn net.Conn, config tls.Config) (*tls.Conn, error) {
-
 	tlsconn := tls.Client(conn, &config)
 
 	errChannel := make(chan error, 2)

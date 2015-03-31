@@ -4,6 +4,8 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"net"
+
+	"github.com/dutchcoders/sslscanner/logger"
 )
 
 func CheckRoot(pool *x509.CertPool) CheckFunc {

@@ -19,6 +19,7 @@ import (
 	"gopkg.in/alecthomas/kingpin.v1"
 
 	"github.com/dutchcoders/sslscanner/checks"
+	"github.com/dutchcoders/sslscanner/logger"
 	"github.com/dutchcoders/sslscanner/scanners"
 
 	// plugins "sslscanner/plugins"
@@ -105,12 +106,6 @@ func parseArgs(args []string) chan IPAndHostname {
 	return out
 }
 
-func NewNullLogger() *log.Logger {
-	return log.New(ioutil.Discard, "", log.Ldate|log.Ltime)
-}
-
-var logger = NewNullLogger()
-
 type PortStatus int
 
 const (
@@ -173,6 +168,11 @@ func NewSSLScanner(conf SSLScannerConfig) *SSLScanner {
 func main() {
 	var (
 		debug  = kingpin.Flag("debug", "enable debug mode").Short('d').Default("false").Bool()
+		https  = kingpin.Flag("enable-https", "enable http scan").Default("false").Bool()
+		smtp   = kingpin.Flag("enable-smtp", "enable smtp scan").Default("false").Bool()
+		imap   = kingpin.Flag("enable-imap", "enable imap scan").Default("false").Bool()
+		ftp    = kingpin.Flag("enable-ftp", "enable ftp scan").Default("false").Bool()
+		pop3   = kingpin.Flag("enable-pop3", "enable pop3 scan").Default("false").Bool()
 		ranges = kingpin.Arg("ips", "range, ip address or hostname").Required().Strings()
 		ports  = kingpin.Flag("ports", "ports to scan").Short('p').Required().String()
 		format = kingpin.Flag("format", "output format to use").Short('f').Default("text").Enum("xml", "json", "text")
@@ -185,16 +185,26 @@ func main() {
 	_ = format
 
 	if *debug {
-		logger = log.New(os.Stderr, "", log.Ldate|log.Ltime)
+		logger.SetLogger(log.New(os.Stderr, "", log.Ldate|log.Ltime))
 	}
 
-	scanners := []scanners.ScanFunc{
-		scanners.Scan(scanners.HTTPSScanner),
-		// Scan(HTTPScanner),
-		// scanners.Scan(scanners.FTPScanner)
-		// scanners.Scan(scanners.POP3Scanner)
-		// scanners.Scan(scanners.IMAPScanner)
-		scanners.Scan(scanners.SMTPScanner),
+	scannerFuncs := []scanners.ScanFunc{}
+
+	if *https {
+		scannerFuncs = append(scannerFuncs, scanners.Scanner(scanners.HTTPSScanner))
+	}
+
+	if *pop3 {
+		scannerFuncs = append(scannerFuncs, scanners.Scanner(scanners.POP3Scanner))
+	}
+	if *smtp {
+		scannerFuncs = append(scannerFuncs, scanners.Scanner(scanners.SMTPScanner))
+	}
+	if *imap {
+		scannerFuncs = append(scannerFuncs, scanners.Scanner(scanners.IMAPScanner))
+	}
+	if *ftp {
+		scannerFuncs = append(scannerFuncs, scanners.Scanner(scanners.FTPScanner))
 	}
 
 	for hostnameAndIp := range parseArgs(*ranges) {
@@ -222,15 +232,19 @@ func main() {
 
 			// specific checks for hostname and ip
 			checkFuncs := []checks.CheckFunc{
+				checks.CheckDeprecatedVersionSupported(tls.VersionSSL30),
+				checks.CheckVersionSupported(tls.VersionTLS10),
+				checks.CheckVersionSupported(tls.VersionTLS11),
+				checks.CheckVersionSupported(tls.VersionTLS12),
 				checks.CheckSuiteSupported(tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256),
 				checks.CheckSuiteSupported(tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256),
-				checks.CheckSuiteSupported(tls.TLS_ECDHE_RSA_WITH_RC4_128_SHA),
-				checks.CheckSuiteSupported(tls.TLS_ECDHE_ECDSA_WITH_RC4_128_SHA),
+				checks.CheckDeprecatedSuiteSupported(tls.TLS_ECDHE_RSA_WITH_RC4_128_SHA),
+				checks.CheckDeprecatedSuiteSupported(tls.TLS_ECDHE_ECDSA_WITH_RC4_128_SHA),
 				checks.CheckSuiteSupported(tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA),
 				checks.CheckSuiteSupported(tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA),
 				checks.CheckSuiteSupported(tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA),
 				checks.CheckSuiteSupported(tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA),
-				checks.CheckSuiteSupported(tls.TLS_RSA_WITH_RC4_128_SHA),
+				checks.CheckDeprecatedSuiteSupported(tls.TLS_RSA_WITH_RC4_128_SHA),
 				checks.CheckSuiteSupported(tls.TLS_RSA_WITH_AES_128_CBC_SHA),
 				checks.CheckSuiteSupported(tls.TLS_RSA_WITH_AES_256_CBC_SHA),
 				checks.CheckSuiteSupported(tls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA),
@@ -271,28 +285,30 @@ func main() {
 
 			logger.Printf("Scanning %s (%d) (%s): ", ip, port, hostname)
 
-			for _, scanner := range scanners {
+			for _, scannerFn := range scannerFuncs {
 				for _, checkFn := range checkFuncs {
 					var conn net.Conn
 					var err error
 					if conn, err = Connect(ip, port); err != nil {
-						logger.Printf("%s\n", err)
-						break
+						logger.Printf("Couldn't connect to %s: %s.\n", ip, err.Error())
+						continue
 					}
 
 					defer conn.Close()
 
-					err = scanner(conn, func() (net.Conn, error) {
+					// the inner function is not necessary anymore
+					err = scannerFn(conn, func() (net.Conn, error) {
 						return conn, checkFn(conn)
 					})
 
 					if err != nil {
-						logger.Printf("%s\n", err)
+						logger.Printf("Protocol error %s: %s.\n", ip, err.Error())
+						continue
 					}
 				}
 			}
 		}
 	}
 
-	// output
+	// output reporter
 }

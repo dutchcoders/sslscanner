@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net"
 	"strings"
+
+	"github.com/dutchcoders/sslscanner/logger"
 )
 
 type SignatureAlgorithm x509.SignatureAlgorithm
