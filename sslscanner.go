@@ -82,12 +82,13 @@ func parseArgs(args []string) chan IPAndHostname {
 				for ip := ip.Mask(ipnet.Mask); ipnet.Contains(ip); inc(ip) {
 					out <- IPAndHostname{IP: ip, Hostname: ""}
 				}
+				continue
 			}
-
 			// single ip
 			ip := net.ParseIP(arg)
 			if ip != nil {
 				out <- IPAndHostname{IP: ip, Hostname: ""}
+				continue
 			}
 
 			// resolve hostname
@@ -95,8 +96,10 @@ func parseArgs(args []string) chan IPAndHostname {
 				for _, ip := range ips {
 					out <- IPAndHostname{IP: ip, Hostname: arg}
 				}
+				continue
 			}
 
+			fmt.Printf("Cannot understand or resolve %s\n", arg)
 		}
 
 		close(out)
@@ -207,6 +210,11 @@ func main() {
 		scannerFuncs = append(scannerFuncs, scanners.Scanner(scanners.FTPScanner))
 	}
 
+	if len(scannerFuncs) == 0 {
+		fmt.Println("No scanners selected.")
+		os.Exit(0)
+	}
+
 	for hostnameAndIp := range parseArgs(*ranges) {
 		hostname := hostnameAndIp.Hostname
 		ip := hostnameAndIp.IP
@@ -298,7 +306,7 @@ func main() {
 
 					// the inner function is not necessary anymore
 					err = scannerFn(conn, func() (net.Conn, error) {
-						return conn, checkFn(conn)
+						return checkFn(conn)
 					})
 
 					if err != nil {

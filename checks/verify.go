@@ -50,13 +50,13 @@ func VerifyValidBefore() VerifyFunc {
 
 // http://golang.org/src/crypto/x509/verify.go?s=7077:7162#L202
 func Verify(verifyFns ...VerifyFunc) CheckFunc {
-	return func(conn net.Conn) error {
+	return func(conn net.Conn) (net.Conn, error) {
 		config := tls.Config{InsecureSkipVerify: true}
 
 		var tlsconn *tls.Conn
 		var err error
 		if tlsconn, err = TLSConnect(conn, config); err != nil {
-			return err
+			return nil, err
 		}
 
 		connState := tlsconn.ConnectionState()
@@ -69,6 +69,6 @@ func Verify(verifyFns ...VerifyFunc) CheckFunc {
 			}
 		}
 
-		return nil
+		return tlsconn, nil
 	}
 }

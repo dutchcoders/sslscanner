@@ -8,30 +8,30 @@ import (
 )
 
 func CheckDeprecatedVersionSupported(version uint16) CheckFunc {
-	return func(conn net.Conn) error {
+	return func(conn net.Conn) (net.Conn, error) {
 		config := tls.Config{MinVersion: version, MaxVersion: version, InsecureSkipVerify: true}
 
-		if _, err := TLSConnect(conn, config); err != nil {
+		if tlsconn, err := TLSConnect(conn, config); err == nil {
+			logger.Printf("Deprecated version %s supported: ok\n", Version(version).String())
+			return tlsconn, nil
+		} else {
 			logger.Printf("Version %s:  %s\n", Version(version).String(), err.Error())
-			return nil
+			return nil, err
 		}
-
-		logger.Printf("Deprecated version %s supported: ok\n", Version(version).String())
-		return nil
 	}
 }
 
 func CheckVersionSupported(version uint16) CheckFunc {
-	return func(conn net.Conn) error {
+	return func(conn net.Conn) (net.Conn, error) {
 		config := tls.Config{MinVersion: version, MaxVersion: version, InsecureSkipVerify: true}
 
-		if _, err := TLSConnect(conn, config); err != nil {
+		if tlsconn, err := TLSConnect(conn, config); err == nil {
+			logger.Printf("Version %s supported: ok\n", Version(version).String())
+			return tlsconn, nil
+		} else {
 			logger.Printf("Version %s:  %s\n", Version(version).String(), err.Error())
-			return nil
+			return nil, err
 		}
-
-		logger.Printf("Version %s supported: ok\n", Version(version).String())
-		return nil
 	}
 }
 

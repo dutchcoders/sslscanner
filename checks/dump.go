@@ -117,12 +117,12 @@ func (a ExtKeyUsage) String() string {
 }
 
 func DumpCertificates() CheckFunc {
-	return func(conn net.Conn) error {
+	return func(conn net.Conn) (net.Conn, error) {
 		config := tls.Config{InsecureSkipVerify: true}
 
 		tlsconn, err := TLSConnect(conn, config)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		connState := tlsconn.ConnectionState()
@@ -158,6 +158,6 @@ func DumpCertificates() CheckFunc {
 			_ = r
 
 		}
-		return nil
+		return tlsconn, nil
 	}
 }

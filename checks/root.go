@@ -9,14 +9,15 @@ import (
 )
 
 func CheckRoot(pool *x509.CertPool) CheckFunc {
-	return func(conn net.Conn) error {
+	return func(conn net.Conn) (net.Conn, error) {
 		config := tls.Config{InsecureSkipVerify: true, RootCAs: pool}
 
-		if _, err := TLSConnect(conn, config); err != nil {
+		if tlsconn, err := TLSConnect(conn, config); err == nil {
+			logger.Printf("CA valid\n")
+			return tlsconn, nil
+		} else {
 			logger.Printf("CA invalid %s\n", err.Error())
-			return nil
+			return nil, err
 		}
-		logger.Printf("CA valid\n")
-		return nil
 	}
 }
