@@ -50,6 +50,8 @@ import (
 // test the info about the certficates
 // comparable with go test
 
+// add generic tls client scanner
+
 func Connect(ip net.IP, port int) (net.Conn, error) {
 	dialer := new(net.Dialer)
 	dialer.Timeout = time.Duration(60) * time.Second
@@ -176,6 +178,7 @@ func main() {
 		imap   = kingpin.Flag("enable-imap", "enable imap scan").Default("false").Bool()
 		ftp    = kingpin.Flag("enable-ftp", "enable ftp scan").Default("false").Bool()
 		pop3   = kingpin.Flag("enable-pop3", "enable pop3 scan").Default("false").Bool()
+		ldap   = kingpin.Flag("enable-ldap", "enable ldap scan").Default("false").Bool()
 		ranges = kingpin.Arg("ips", "range, ip address or hostname").Required().Strings()
 		ports  = kingpin.Flag("ports", "ports to scan").Short('p').Required().String()
 		format = kingpin.Flag("format", "output format to use").Short('f').Default("text").Enum("xml", "json", "text")
@@ -204,6 +207,9 @@ func main() {
 		scannerFuncs = append(scannerFuncs, scanners.Scanner(scanners.SMTPScanner))
 	}
 	if *imap {
+		scannerFuncs = append(scannerFuncs, scanners.Scanner(scanners.IMAPScanner))
+	}
+	if *ldap {
 		scannerFuncs = append(scannerFuncs, scanners.Scanner(scanners.IMAPScanner))
 	}
 	if *ftp {

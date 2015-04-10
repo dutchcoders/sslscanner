@@ -6,6 +6,12 @@ SSLScanner is a command line tool that will scan your network for ssl / tls impl
 * HTTPS
 * POP3
 * IMAP
+* LDAPS
+* RADIUS
+
+```
+openssl s_client -connect whitepages.gatech.edu:636
+```
 
 # Demo
 
